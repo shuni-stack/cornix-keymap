@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cornix LP Keymap Editor</title>
+<style>
+:root {
+  --bg: #111827; --surface: #1f2937; --surface2: #374151;
+  --accent: #6366f1; --accent2: #4f46e5; --accent3: #818cf8;
+  --text: #f9fafb; --text-dim: #9ca3af; --text-dimmer: #6b7280;
+  --key-bg: #1e2a3a; --key-border: #374151; --key-hover: #2d3a4d;
+  --layer-blue: #1e3a5f; --layer-blue-b: #2563eb;
+  --mod-purple: #2d1b4e; --mod-purple-b: #7c3aed;
+  --empty-bg: #151c25; --radius: 7px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; min-height: 100vh; }
+#app { max-width: 1000px; margin: 0 auto; padding: 20px 16px 40px; }
+
+header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--key-border); margin-bottom: 18px; }
+header h1 { font-size: 18px; font-weight: 700; }
+header h1 em { font-style: normal; color: var(--accent3); }
+.btn-group { display: flex; gap: 8px; }
+button { background: var(--surface2); color: var(--text); border: 1px solid var(--key-border); border-radius: 6px; padding: 7px 13px; cursor: pointer; font-size: 12px; transition: background .15s; }
+button:hover { background: #4b5563; }
+button.primary { background: var(--accent2); border-color: var(--accent2); }
+button.primary:hover { background: var(--accent); }
+
+/* Layer tabs */
+.ltabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
+.ltab { padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid var(--key-border); background: var(--surface); font-size: 11px; transition: all .15s; white-space: nowrap; }
+.ltab:hover { background: var(--surface2); }
+.ltab.active { background: var(--accent2); border-color: var(--accent2); font-weight: 600; }
+.ltab-num { font-size: 9px; color: var(--text-dim); display: block; }
+.ltab.active .ltab-num { color: rgba(255,255,255,.7); }
+
+/* Keyboard area */
+.kb-wrap { display: flex; justify-content: center; align-items: flex-start; gap: 24px; margin-bottom: 20px; }
+.kb-half { position: relative; }
+
+/* Keys */
+.key {
+  position: absolute; width: 50px; height: 50px;
+  background: var(--key-bg); border: 1.5px solid var(--key-border);
+  border-radius: var(--radius); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; cursor: pointer;
+  transition: background .1s, border-color .1s, transform .1s;
+  user-select: none; font-size: 11px; font-weight: 600; text-align: center;
+  padding: 3px; line-height: 1.25; overflow: hidden;
+}
+.key:hover { background: var(--key-hover); border-color: #6b7280; transform: translateY(-1px); }
+.key.selected { background: var(--accent2); border-color: var(--accent3); box-shadow: 0 0 0 2px rgba(99,102,241,.4); }
+.key.empty { background: var(--empty-bg); border-style: dashed; border-color: #2d3748; color: transparent; }
+.key.transp { color: var(--text-dimmer); font-size: 15px; }
+.key.lkey { background: var(--layer-blue); border-color: var(--layer-blue-b); }
+.key.lkey .ks { color: #60a5fa; }
+.key.mkey { background: var(--mod-purple); border-color: var(--mod-purple-b); }
+.key.mkey .ks { color: #a78bfa; }
+.ks { font-size: 11px; font-weight: 700; }
+.ks2 { font-size: 9px; color: var(--text-dim); margin-top: 1px; }
+.lkey .ks2 { color: #93c5fd; }
+.mkey .ks2 { color: #c4b5fd; }
+
+/* Modal */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0; }
+.overlay.off { display: none; }
+.picker { background: var(--surface); border-top: 1px solid var(--key-border); border-radius: 14px 14px 0 0; width: 100%; max-width: 760px; max-height: 72vh; overflow-y: auto; padding: 18px 16px 30px; }
+.picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.picker-head h2 { font-size: 14px; font-weight: 700; }
+.close-btn { font-size: 22px; cursor: pointer; color: var(--text-dim); line-height: 1; padding: 0 4px; }
+.ptabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+.ptab { padding: 4px 9px; border-radius: 5px; cursor: pointer; border: 1px solid var(--key-border); background: var(--key-bg); font-size: 11px; }
+.ptab:hover { background: var(--surface2); }
+.ptab.active { background: var(--accent2); border-color: var(--accent2); }
+.psearch { width: 100%; background: var(--key-bg); border: 1px solid var(--key-border); border-radius: 6px; color: var(--text); padding: 7px 10px; font-size: 12px; margin-bottom: 10px; }
+.psearch:focus { outline: none; border-color: var(--accent3); }
+.pgrid { display: flex; flex-wrap: wrap; gap: 5px; }
+.kopt {
+  min-width: 46px; height: 38px; padding: 2px 7px;
+  background: var(--key-bg); border: 1px solid var(--key-border);
+  border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .1s; text-align: center; white-space: nowrap; line-height: 1.2;
+}
+.kopt:hover { background: var(--accent2); border-color: var(--accent2); }
+.kopt.lo { background: var(--layer-blue); border-color: var(--layer-blue-b); color: #60a5fa; }
+.kopt.lo:hover { background: #1d4ed8; }
+.kopt.mo { background: var(--mod-purple); border-color: var(--mod-purple-b); color: #a78bfa; }
+.kopt.mo:hover { background: #6d28d9; }
+
+/* Reference */
+.ref-sec { border-top: 1px solid var(--key-border); padding-top: 14px; }
+.ref-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; color: var(--text-dim); margin-bottom: 10px; }
+.ref-toggle:hover { color: var(--text); }
+.ref-toggle select { margin-left: auto; background: var(--key-bg); color: var(--text); border: 1px solid var(--key-border); border-radius: 5px; padding: 4px 8px; font-size: 11px; }
+.ref-kb { display: none; }
+.ref-kb.on { display: block; }
+.ref-row { display: flex; gap: 3px; margin-bottom: 3px; justify-content: center; }
+.rk { min-width: 34px; height: 34px; padding: 0 5px; background: var(--key-bg); border: 1px solid var(--key-border); border-radius: 5px; font-size: 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .1s; white-space: nowrap; }
+.rk:hover { background: var(--accent2); border-color: var(--accent2); }
+.rk.w1 { min-width: 52px; } .rk.w2 { min-width: 70px; } .rk.w3 { min-width: 88px; } .rk.sp { min-width: 220px; }
+
+/* Hint bar */
+.hint { text-align: center; color: var(--text-dimmer); font-size: 11px; margin-bottom: 14px; }
+.sel-info { text-align: center; font-size: 11px; color: var(--accent3); margin-bottom: 8px; min-height: 16px; }
+
+/* Encoders */
+.enc-row { display: flex; justify-content: center; gap: 40px; margin: 6px 0 20px; }
+.enc-widget { display: flex; align-items: center; gap: 8px; }
+.enc-knob { width: 52px; height: 52px; border-radius: 50%; background: var(--surface2); border: 2px solid var(--key-border); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--text-dim); flex-shrink: 0; }
+.enc-side { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.enc-dir { font-size: 10px; color: var(--text-dimmer); }
+.enc-key { min-width: 52px; height: 34px; padding: 2px 6px; background: var(--key-bg); border: 1px solid var(--key-border); border-radius: 6px; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .1s; text-align: center; }
+.enc-key:hover { background: var(--key-hover); border-color: #6b7280; }
+.enc-key.selected { background: var(--accent2); border-color: var(--accent3); }
+.enc-label { font-size: 10px; color: var(--text-dimmer); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Cornix <em>LP</em> Keymap Editor</h1>
+    <div class="btn-group">
+      <button onclick="doImport()">インポート (.vil)</button>
+      <button class="primary" onclick="doExport()">エクスポート (.vil)</button>
+    </div>
+  </header>
+
+  <div class="ltabs" id="ltabs"></div>
+  <div class="hint">キーをクリックして割り当て変更 — 下の参照キーボードからもアサイン可能</div>
+  <div class="sel-info" id="selInfo"></div>
+  <div class="kb-wrap" id="kbWrap"></div>
+  <div class="enc-row" id="encRow"></div>
+
+  <div class="ref-sec">
+    <div class="ref-toggle" id="refToggle" onclick="toggleRef()">
+      <span id="refArrow">▶</span>
+      <span>参照キーボードを表示（移行元）</span>
+      <select id="refSel" onclick="event.stopPropagation()" onchange="renderRef()">
+        <option value="60">60% QWERTY (ANSI)</option>
+        <option value="hhkb">HHKB</option>
+        <option value="tkl">TKL (テンキーレス)</option>
+      </select>
+    </div>
+    <div class="ref-kb" id="refKb"></div>
+  </div>
+</div>
+
+<!-- Key picker -->
+<div class="overlay off" id="overlay" onclick="overlayClick(event)">
+  <div class="picker" id="picker">
+    <div class="picker-head">
+      <h2 id="pickerTitle">キーを選択</h2>
+      <span class="close-btn" onclick="closePicker()">×</span>
+    </div>
+    <div class="ptabs" id="ptabs"></div>
+    <input class="psearch" id="psearch" placeholder="キー名で検索..." oninput="renderPGrid()">
+    <div class="pgrid" id="pgrid"></div>
+  </div>
+</div>
+
+<script>
+// ─── Layout constants ──────────────────────────────────────────────────────
+const KS = 50, KG = 4, UNIT = KS + KG;
+
+// Column stagger (px, y offset). Left half: col0=outer-pinky, col5=inner-index
+const L_STAG = [14, 7, -2, -12, -5, 0];
+const R_STAG = [0, -5, -12, -2, 7, 14]; // mirror
+
+// Key index formula (ZMK row-interleaved order):
+//   Left  (row,col): row*12 + col        rows 0-3, cols 0-5
+//   Right (row,col): row*12 + 6 + col
+// Thumb row = row 3
+
+// ─── Keycode display labels ────────────────────────────────────────────────
+const LABELS = {
+  KC_TRNS:'▽',KC_NO:'',KC_SPC:'Space',KC_ENT:'↵',KC_ENTER:'↵',
+  KC_BSPC:'⌫',KC_TAB:'Tab',KC_ESC:'Esc',KC_DEL:'Del',KC_INS:'Ins',
+  KC_CAPS:'Caps',KC_PSCR:'PrtSc',KC_SCRL:'ScLk',KC_PAUS:'Pause',KC_NUM:'NumLk',
+  KC_LSFT:'⇧L',KC_RSFT:'⇧R',KC_LCTL:'⌃L',KC_RCTL:'⌃R',
+  KC_LALT:'⌥L',KC_RALT:'⌥R',KC_LGUI:'⌘L',KC_RGUI:'⌘R',
+  KC_UP:'↑',KC_DOWN:'↓',KC_LEFT:'←',KC_RIGHT:'→',
+  KC_HOME:'Home',KC_END:'End',KC_PGUP:'PgUp',KC_PGDN:'PgDn',
+  KC_GRV:'`',KC_MINS:'-',KC_EQL:'=',KC_LBRC:'[',KC_RBRC:']',
+  KC_BSLS:'\\',KC_SCLN:';',KC_QUOT:"'",KC_COMM:',',KC_DOT:'.',KC_SLSH:'/',
+  KC_EXLM:'!',KC_AT:'@',KC_HASH:'#',KC_DLR:'$',KC_PERC:'%',
+  KC_CIRC:'^',KC_AMPR:'&',KC_ASTR:'*',KC_LPRN:'(',KC_RPRN:')',
+  KC_UNDS:'_',KC_PLUS:'+',KC_LCBR:'{',KC_RCBR:'}',KC_PIPE:'|',
+  KC_COLN:':',KC_DQUO:'"',KC_LT:'<',KC_GT:'>',KC_QUES:'?',KC_TILD:'~',
+  KC_MUTE:'Mute',KC_VOLU:'Vol+',KC_VOLD:'Vol-',
+  KC_MPLY:'▶⏸',KC_MNXT:'⏭',KC_MPRV:'⏮',KC_MSTP:'⏹',
+  KC_MS_U:'M↑',KC_MS_D:'M↓',KC_MS_L:'M←',KC_MS_R:'M→',
+  KC_BTN1:'MB1',KC_BTN2:'MB2',KC_BTN3:'MB3',KC_WH_U:'WH↑',KC_WH_D:'WH↓',
+  KC_KP_0:'KP0',KC_KP_1:'KP1',KC_KP_2:'KP2',KC_KP_3:'KP3',KC_KP_4:'KP4',
+  KC_KP_5:'KP5',KC_KP_6:'KP6',KC_KP_7:'KP7',KC_KP_8:'KP8',KC_KP_9:'KP9',
+  KC_KP_DOT:'KP.',KC_KP_SLASH:'KP/',KC_KP_ASTERISK:'KP*',
+  KC_KP_MINUS:'KP-',KC_KP_PLUS:'KP+',KC_KP_ENTER:'KPEnt',KC_KP_EQUAL:'KP=',
+  // Bluetooth / 出力切り替え
+  OUT_USB:'→USB',OUT_BT:'→BT',OUT_AUTO:'Auto',
+  BT_SEL0:'BT 0',BT_SEL1:'BT 1',BT_SEL2:'BT 2',BT_SEL3:'BT 3',BT_SEL4:'BT 4',
+  BT_CLR:'BT CLR',BT_NXT:'BT次',BT_PRV:'BT前',
+  // リセット
+  QK_BOOT:'Boot',QK_RBT:'Reboot',EE_CLR:'EEclr',
+};
+'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(c => LABELS['KC_'+c] = c);
+'1234567890'.split('').forEach(c => LABELS['KC_'+c] = c);
+for(let i=1;i<=24;i++) LABELS[`KC_F${i}`]=`F${i}`;
+
+function getLabel(kc) {
+  if (!kc || kc==='KC_NO') return '';
+  if (kc==='KC_TRNS') return '▽';
+  if (LABELS[kc]) return LABELS[kc];
+  const mo = kc.match(/^MO\((\d+)\)$/);   if (mo) return `MO\n${mo[1]}`;
+  const tg = kc.match(/^TG\((\d+)\)$/);   if (tg) return `TG\n${tg[1]}`;
+  const to = kc.match(/^TO\((\d+)\)$/);   if (to) return `TO\n${to[1]}`;
+  const osl= kc.match(/^OSL\((\d+)\)$/);  if (osl) return `OSL\n${osl[1]}`;
+  const df = kc.match(/^DF\((\d+)\)$/);   if (df) return `DF\n${df[1]}`;
+  const lt = kc.match(/^LT\((\d+),(.+)\)$/);
+  if (lt) return `LT${lt[1]}\n${getLabel(lt[2])}`;
+  const mt = kc.match(/^MT\((.+),(.+)\)$/);
+  if (mt) return `MT\n${getLabel(mt[2])}`;
+  const osm= kc.match(/^OSM\((.+)\)$/);
+  if (osm) return `OSM\n${getLabel(osm[1])}`;
+  return kc.replace(/^KC_/,'');
+}
+
+function getClass(kc) {
+  if (!kc||kc==='KC_NO') return 'empty';
+  if (kc==='KC_TRNS') return 'transp';
+  if (/^(MO|TG|TO|LT|OSL|DF)\(/.test(kc)) return 'lkey';
+  if (/^(KC_LSFT|KC_RSFT|KC_LCTL|KC_RCTL|KC_LALT|KC_RALT|KC_LGUI|KC_RGUI)$/.test(kc)||/^(MT|OSM)\(/.test(kc)) return 'mkey';
+  return '';
+}
+
+// ─── Default layer 0 (Base) ────────────────────────────────────────────────
+// Index 24: LT(4,KC_LSFT) = タップ→Shift、ホールド→Adjレイヤー (TKL左下Shiftを再現)
+const DEF0 = [
+  // Row 0: left cols 0-5, right cols 0-5
+  'KC_TAB','KC_Q','KC_W','KC_E','KC_R','KC_T',
+  'KC_Y','KC_U','KC_I','KC_O','KC_P','KC_BSLS',
+  // Row 1
+  'KC_ESC','KC_A','KC_S','KC_D','KC_F','KC_G',
+  'KC_H','KC_J','KC_K','KC_L','KC_SCLN','KC_QUOT',
+  // Row 2: 左端をLT(4,Shift)に変更
+  'LT(4,KC_LSFT)','KC_Z','KC_X','KC_C','KC_V','KC_B',
+  'KC_N','KC_M','KC_COMM','KC_DOT','KC_SLSH','KC_BSPC',
+  // Thumb row (row 3): LTをMOに変更（LTはCornix LPファームウェアで動作しないため）
+  'KC_LCTL','KC_LALT','KC_LGUI','MO(6)','MO(2)','KC_SPC',
+  'KC_ENT','MO(3)','MO(5)','KC_RGUI','KC_RALT','KC_RCTL',
+];
+
+// ─── Layer 2 (Sym): MO(2)左親指 / LT(2,BSPC)右親指 ────────────────────────
+// よく使う記号を右手に集約 (左親指MO(2)ホールド中に右手で打つ)
+const DEF2 = Array(48).fill('KC_TRNS');
+DEF2[6]  = 'KC_EXLM'; // Y → !
+DEF2[7]  = 'KC_AT';   // U → @
+DEF2[8]  = 'KC_HASH'; // I → #
+DEF2[9]  = 'KC_DLR';  // O → $
+DEF2[10] = 'KC_PERC'; // P → %
+DEF2[18] = 'KC_CIRC'; // H → ^
+DEF2[19] = 'KC_AMPR'; // J → &
+DEF2[20] = 'KC_ASTR'; // K → *
+DEF2[21] = 'KC_LPRN'; // L → (
+DEF2[22] = 'KC_RPRN'; // ; → )
+DEF2[34] = 'KC_QUES'; // / → ?
+DEF2[33] = 'KC_TILD'; // . → ~
+DEF2[32] = 'KC_PIPE'; // , → |
+
+// ─── Layer 3 (Fn): MO(3)右親指 → F1-F12 ＋ メディア ──────────────────────
+// 左手でF1-F5、右手でF6-F10 (TKLファンクション行の感覚を維持)
+const DEF3 = Array(48).fill('KC_TRNS');
+DEF3[1]='KC_F1';  DEF3[2]='KC_F2';  DEF3[3]='KC_F3';  DEF3[4]='KC_F4';  DEF3[5]='KC_F5';
+DEF3[6]='KC_F6';  DEF3[7]='KC_F7';  DEF3[8]='KC_F8';  DEF3[9]='KC_F9';  DEF3[10]='KC_F10';
+DEF3[13]='KC_F11'; DEF3[14]='KC_F12';
+DEF3[18]='KC_MPRV'; DEF3[19]='KC_MPLY'; DEF3[20]='KC_MSTP'; DEF3[21]='KC_MNXT';
+DEF3[22]='KC_MUTE'; DEF3[23]='KC_VOLU'; DEF3[35]='KC_VOLD';
+
+// ─── Layer 5 (Nav): LT(5,SPC)左親指ホールド → ナビゲーション ──────────────
+// 逆T字型矢印: I=↑、J=←、K=↓、L=→
+// I の真下に K があるので視覚的にわかりやすい
+//   Y=Home  U=PgUp  I=↑   O=PgDn  P=End  \=Del
+//           J=←    K=↓   L=→
+const DEF5 = Array(48).fill('KC_TRNS');
+DEF5[6]='KC_HOME';  DEF5[7]='KC_PGUP'; DEF5[8]='KC_UP';    DEF5[9]='KC_PGDN';
+DEF5[10]='KC_END';  DEF5[11]='KC_DEL';
+DEF5[19]='KC_LEFT'; DEF5[20]='KC_DOWN'; DEF5[21]='KC_RIGHT';
+DEF5[22]='KC_DEL';  // ;位置にもDel (押しやすい)
+
+// ─── Layer 6 (Num): LT(6,ESC)左親指ホールド → 数字行 ─────────────────────
+// TKLの数字行を最上段に再現。シフト記号もホーム行に配置。
+const DEF6 = Array(48).fill('KC_TRNS');
+DEF6[0]='KC_GRV';  // Tab位置 → `
+DEF6[1]='KC_1'; DEF6[2]='KC_2'; DEF6[3]='KC_3'; DEF6[4]='KC_4'; DEF6[5]='KC_5';
+DEF6[6]='KC_6'; DEF6[7]='KC_7'; DEF6[8]='KC_8'; DEF6[9]='KC_9'; DEF6[10]='KC_0';
+DEF6[11]='KC_MINS'; // \位置 → -
+DEF6[12]='KC_TILD'; // ESC位置 → ~
+DEF6[13]='KC_EXLM'; DEF6[14]='KC_AT'; DEF6[15]='KC_HASH'; DEF6[16]='KC_DLR'; DEF6[17]='KC_PERC';
+DEF6[18]='KC_CIRC'; DEF6[19]='KC_AMPR'; DEF6[20]='KC_ASTR'; DEF6[21]='KC_LPRN'; DEF6[22]='KC_RPRN';
+DEF6[23]='KC_EQL';  // '位置 → =
+DEF6[35]='KC_UNDS'; // ⌫位置 → _ (Shift+-)
+
+// ─── Layer 4 (Adj): LT(4,Shift)ホールド → BT・システム設定 ─────────────────
+// 左手上段: BT接続先選択 (BT0〜BT4)
+// 左手ホーム行: 出力切り替え・BT削除
+// 右手: リセット類 (誤爆しにくい位置)
+const DEF4 = Array(48).fill('KC_NO');
+DEF4[1]='BT_SEL0'; DEF4[2]='BT_SEL1'; DEF4[3]='BT_SEL2'; DEF4[4]='BT_SEL3'; DEF4[5]='BT_SEL4';
+DEF4[13]='OUT_USB'; DEF4[14]='OUT_BT'; DEF4[15]='BT_CLR';
+DEF4[16]='BT_PRV';  DEF4[17]='BT_NXT';
+DEF4[9]='QK_BOOT'; DEF4[10]='QK_RBT'; DEF4[11]='EE_CLR';
+// 通過させるキー (間違えて押しても問題ないもの)
+[0,6,7,8,12,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,
+ 36,37,38,39,40,41,42,43,44,45,46,47].forEach(i=>DEF4[i]='KC_TRNS');
+
+// ─── State ─────────────────────────────────────────────────────────────────
+const S = {
+  layers: Array.from({length:8},(_,i)=>
+    ({0:[...DEF0],2:[...DEF2],3:[...DEF3],4:[...DEF4],5:[...DEF5],6:[...DEF6]}[i] ?? Array(48).fill('KC_TRNS'))),
+  // encoders[layer][enc(0=左,1=右)][dir(0=CCW,1=CW)]
+  // encoders[layer][enc(0=左,1=右)][dir(0=CCW,1=CW)]
+  // 左: CCW=Vol-, CW=Vol+  右: CCW=WH_U(上スクロール), CW=WH_D(下スクロール)
+  encoders: Array.from({length:8},(_,i)=> i===0
+    ? [['KC_VOLD','KC_VOLU'],['KC_WH_U','KC_WH_D']]
+    : [['KC_TRNS','KC_TRNS'],['KC_TRNS','KC_TRNS']]
+  ),
+  names: ['Base','Win','Sym','Fn','Adj','Nav','Num','Extra'],
+  layer: 0,
+  selKey: null,
+  selEnc: null, // {enc:0|1, dir:0|1}
+  ptab: 'special',
+  showRef: false,
+};
+
+// ─── Picker categories ─────────────────────────────────────────────────────
+const CATS = {
+  special: { label:'特殊', keys:['KC_TRNS','KC_NO','KC_SPC','KC_ENT','KC_BSPC','KC_TAB','KC_ESC','KC_DEL','KC_INS','KC_CAPS','KC_PSCR','KC_SCRL','KC_PAUS'] },
+  bt:      { label:'BT・システム', keys:['BT_SEL0','BT_SEL1','BT_SEL2','BT_SEL3','BT_SEL4','BT_NXT','BT_PRV','BT_CLR','OUT_USB','OUT_BT','OUT_AUTO','QK_BOOT','QK_RBT','EE_CLR'] },
+  letters: { label:'A-Z', keys:'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c=>'KC_'+c) },
+  nums:    { label:'0-9', keys:['KC_1','KC_2','KC_3','KC_4','KC_5','KC_6','KC_7','KC_8','KC_9','KC_0'] },
+  sym:     { label:'記号', keys:['KC_EXLM','KC_AT','KC_HASH','KC_DLR','KC_PERC','KC_CIRC','KC_AMPR','KC_ASTR','KC_LPRN','KC_RPRN','KC_QUES','KC_TILD','KC_UNDS','KC_PLUS','KC_LCBR','KC_RCBR','KC_PIPE','KC_COLN','KC_DQUO','KC_LT','KC_GT','KC_GRV','KC_MINS','KC_EQL','KC_LBRC','KC_RBRC','KC_BSLS','KC_SCLN','KC_QUOT','KC_COMM','KC_DOT','KC_SLSH'] },
+  fn:      { label:'F1-F24', keys:Array.from({length:24},(_,i)=>`KC_F${i+1}`) },
+  nav:     { label:'矢印/移動', keys:['KC_UP','KC_DOWN','KC_LEFT','KC_RIGHT','KC_HOME','KC_END','KC_PGUP','KC_PGDN'] },
+  mod:     { label:'Modifier', keys:['KC_LSFT','KC_RSFT','KC_LCTL','KC_RCTL','KC_LALT','KC_RALT','KC_LGUI','KC_RGUI','OSM(KC_LSFT)','OSM(KC_RSFT)','OSM(KC_LCTL)','OSM(KC_LALT)','OSM(KC_LGUI)'] },
+  layer:   { label:'レイヤー', keys:[...Array.from({length:8},(_,i)=>`MO(${i})`), ...Array.from({length:8},(_,i)=>`TG(${i})`), ...Array.from({length:8},(_,i)=>`TO(${i})`), ...Array.from({length:8},(_,i)=>`OSL(${i})`), ...Array.from({length:8},(_,i)=>`DF(${i})`)] },
+  lt:      { label:'LT (レイヤータップ)', keys:[...['KC_SPC','KC_ENT','KC_BSPC','KC_ESC','KC_TAB'].flatMap(k=>Array.from({length:8},(_,i)=>`LT(${i},${k})`))] },
+  mt:      { label:'MT (モドタップ)', keys:['KC_LSFT','KC_RSFT','KC_LCTL','KC_RCTL','KC_LALT','KC_RALT','KC_LGUI','KC_RGUI'].flatMap(m=>['KC_A','KC_S','KC_D','KC_F','KC_J','KC_K','KC_L','KC_SCLN'].map(k=>`MT(${m},${k})`)) },
+  media:   { label:'メディア', keys:['KC_MUTE','KC_VOLU','KC_VOLD','KC_MPLY','KC_MNXT','KC_MPRV','KC_MSTP'] },
+  mouse:   { label:'マウス', keys:['KC_MS_U','KC_MS_D','KC_MS_L','KC_MS_R','KC_BTN1','KC_BTN2','KC_BTN3','KC_WH_U','KC_WH_D'] },
+  numpad:  { label:'テンキー', keys:['KC_NUM','KC_KP_0','KC_KP_1','KC_KP_2','KC_KP_3','KC_KP_4','KC_KP_5','KC_KP_6','KC_KP_7','KC_KP_8','KC_KP_9','KC_KP_DOT','KC_KP_SLASH','KC_KP_ASTERISK','KC_KP_MINUS','KC_KP_PLUS','KC_KP_ENTER','KC_KP_EQUAL'] },
+};
+
+// ─── Render ────────────────────────────────────────────────────────────────
+function render() { renderTabs(); renderKb(); renderEncoders(); }
+
+function renderTabs() {
+  document.getElementById('ltabs').innerHTML = S.names.map((n,i)=>`
+    <div class="ltab${i===S.layer?' active':''}" onclick="setLayer(${i})">
+      ${n}<span class="ltab-num">Layer ${i}</span>
+    </div>`).join('');
+}
+
+function renderKb() {
+  const wrap = document.getElementById('kbWrap');
+  wrap.innerHTML = '';
+  wrap.appendChild(buildHalf(false)); // left
+  wrap.appendChild(buildHalf(true));  // right
+  updateSelInfo();
+}
+
+function buildHalf(isRight) {
+  const stag = isRight ? R_STAG : L_STAG;
+  const maxS = Math.max(...stag), minS = Math.min(...stag);
+  const mainH = 2*UNIT + (maxS-minS) + KS; // 3 rows
+  const thumbY = mainH + 8;
+  const totalH = thumbY + KS + 4;
+  const W = 6*UNIT - KG;
+
+  const div = document.createElement('div');
+  div.className = 'kb-half';
+  div.style.cssText = `position:relative;width:${W}px;height:${totalH}px`;
+
+  const layer = S.layers[S.layer];
+  // Main matrix: rows 0-2
+  for (let row=0; row<3; row++) {
+    for (let col=0; col<6; col++) {
+      const idx = isRight ? row*12+6+col : row*12+col;
+      const x = col*UNIT;
+      const y = row*UNIT + stag[col] - minS;
+      addKey(div, idx, x, y, layer[idx]);
+    }
+  }
+  // Thumb row (row 3)
+  for (let col=0; col<6; col++) {
+    const idx = isRight ? 3*12+6+col : 3*12+col;
+    const x = col*UNIT;
+    addKey(div, idx, x, thumbY, layer[idx]);
+  }
+  return div;
+}
+
+function addKey(parent, idx, x, y, kc) {
+  const lbl = getLabel(kc);
+  const cls = getClass(kc);
+  const sel = S.selKey===idx;
+  const lines = lbl.split('\n');
+  const el = document.createElement('div');
+  el.className = `key ${cls}${sel?' selected':''}`;
+  el.style.cssText = `left:${x}px;top:${y}px`;
+  el.title = kc||'';
+  el.innerHTML = lines.length>1
+    ? `<span class="ks">${lines[0]}</span><span class="ks2">${lines[1]}</span>`
+    : `<span class="ks">${lbl}</span>`;
+  el.addEventListener('click', ()=>selectKey(idx));
+  parent.appendChild(el);
+}
+
+// ─── Key selection ─────────────────────────────────────────────────────────
+function selectKey(idx) {
+  S.selKey = idx;
+  renderKb();
+  document.getElementById('overlay').classList.remove('off');
+  renderPTabs();
+  renderPGrid();
+}
+
+function updateSelInfo() {
+  const el = document.getElementById('selInfo');
+  if (S.selKey===null) { el.textContent=''; return; }
+  const kc = S.layers[S.layer][S.selKey];
+  el.textContent = `選択中: キー #${S.selKey} — 現在の割り当て: ${kc||'KC_NO'}`;
+}
+
+function closePicker() {
+  S.selKey = null;
+  S.selEnc = null;
+  document.getElementById('overlay').classList.add('off');
+  renderKb();
+  renderEncoders();
+}
+function overlayClick(e) { if(e.target.id==='overlay') closePicker(); }
+
+function selectEncoder(enc, dir) {
+  S.selKey = null;
+  S.selEnc = {enc, dir};
+  const dirLabel = dir===1 ? '時計回り (CW)' : '反時計回り (CCW)';
+  const encLabel = enc===0 ? '左ツマミ' : '右ツマミ';
+  document.getElementById('pickerTitle').textContent = `${encLabel} — ${dirLabel}`;
+  document.getElementById('overlay').classList.remove('off');
+  renderEncoders();
+  renderPTabs();
+  renderPGrid();
+}
+
+function renderEncoders() {
+  const encs = S.encoders[S.layer];
+  const names = ['左ツマミ','右ツマミ'];
+  document.getElementById('encRow').innerHTML = encs.map((e,ei)=>{
+    const ccwSel = S.selEnc?.enc===ei && S.selEnc?.dir===0;
+    const cwSel  = S.selEnc?.enc===ei && S.selEnc?.dir===1;
+    return `
+    <div class="enc-widget">
+      <div class="enc-side">
+        <div class="enc-dir">↺ CCW</div>
+        <div class="enc-key${ccwSel?' selected':''}" onclick="selectEncoder(${ei},0)">${getLabel(e[0])||'(なし)'}</div>
+      </div>
+      <div style="text-align:center">
+        <div class="enc-knob">◎</div>
+        <div class="enc-label">${names[ei]}</div>
+      </div>
+      <div class="enc-side">
+        <div class="enc-dir">↻ CW</div>
+        <div class="enc-key${cwSel?' selected':''}" onclick="selectEncoder(${ei},1)">${getLabel(e[1])||'(なし)'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setLayer(i) { S.layer=i; render(); }
+
+// ─── Picker ────────────────────────────────────────────────────────────────
+function renderPTabs() {
+  document.getElementById('ptabs').innerHTML = Object.entries(CATS).map(([id,c])=>
+    `<div class="ptab${S.ptab===id?' active':''}" onclick="setPTab('${id}')">${c.label}</div>`
+  ).join('');
+}
+
+function setPTab(id) {
+  S.ptab=id;
+  document.getElementById('psearch').value='';
+  document.querySelectorAll('.ptab').forEach(el=>el.classList.toggle('active',el.textContent.trim()===CATS[id].label));
+  renderPGrid();
+}
+
+function renderPGrid() {
+  const q = document.getElementById('psearch').value.toLowerCase();
+  let keys = q
+    ? Object.entries(LABELS).filter(([k,v])=>k.toLowerCase().includes(q)||v.toLowerCase().includes(q)).map(([k])=>k)
+    : CATS[S.ptab]?.keys || [];
+
+  document.getElementById('pgrid').innerHTML = keys.map(kc=>{
+    const lbl = getLabel(kc).replace('\n','<br>');
+    const cls = /^(MO|TG|TO|LT|OSL|DF)\(/.test(kc)?'lo': getClass(kc)==='mkey'?'mo':'';
+    return `<div class="kopt ${cls}" onclick="assign('${esc(kc)}')" title="${kc}">${lbl||'(なし)'}</div>`;
+  }).join('');
+}
+
+function assign(kc) {
+  if (S.selEnc !== null) {
+    S.encoders[S.layer][S.selEnc.enc][S.selEnc.dir] = kc;
+  } else if (S.selKey !== null) {
+    S.layers[S.layer][S.selKey] = kc;
+  }
+  closePicker();
+}
+
+function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+// ─── Reference keyboard ────────────────────────────────────────────────────
+function toggleRef() {
+  S.showRef = !S.showRef;
+  document.getElementById('refArrow').textContent = S.showRef?'▼':'▶';
+  const kb = document.getElementById('refKb');
+  kb.className = 'ref-kb' + (S.showRef?' on':'');
+  if (S.showRef) renderRef();
+}
+
+function renderRef() {
+  const type = document.getElementById('refSel').value;
+  document.getElementById('refKb').innerHTML = buildRef(type);
+}
+
+// Map display label → QMK keycode
+const REF_MAP = {
+  'Q':'KC_Q','W':'KC_W','E':'KC_E','R':'KC_R','T':'KC_T','Y':'KC_Y','U':'KC_U',
+  'I':'KC_I','O':'KC_O','P':'KC_P','A':'KC_A','S':'KC_S','D':'KC_D','F':'KC_F',
+  'G':'KC_G','H':'KC_H','J':'KC_J','K':'KC_K','L':'KC_L','Z':'KC_Z','X':'KC_X',
+  'C':'KC_C','V':'KC_V','B':'KC_B','N':'KC_N','M':'KC_M',
+  '1':'KC_1','2':'KC_2','3':'KC_3','4':'KC_4','5':'KC_5',
+  '6':'KC_6','7':'KC_7','8':'KC_8','9':'KC_9','0':'KC_0',
+  'F1':'KC_F1','F2':'KC_F2','F3':'KC_F3','F4':'KC_F4','F5':'KC_F5','F6':'KC_F6',
+  'F7':'KC_F7','F8':'KC_F8','F9':'KC_F9','F10':'KC_F10','F11':'KC_F11','F12':'KC_F12',
+  'Tab':'KC_TAB','Esc':'KC_ESC','⌫':'KC_BSPC','↵':'KC_ENT','Caps':'KC_CAPS',
+  '⇧L':'KC_LSFT','⇧R':'KC_RSFT','⌃L':'KC_LCTL','⌃R':'KC_RCTL',
+  '⌥L':'KC_LALT','⌥R':'KC_RALT','⌘L':'KC_LGUI','⌘R':'KC_RGUI',
+  'Space':'KC_SPC','Del':'KC_DEL','Ins':'KC_INS',
+  '`':'KC_GRV','-':'KC_MINS','=':'KC_EQL','[':'KC_LBRC',']':'KC_RBRC',
+  '\\':'KC_BSLS',';':'KC_SCLN',"'":"KC_QUOT",',':'KC_COMM','.':'KC_DOT','/':'KC_SLSH',
+  '↑':'KC_UP','↓':'KC_DOWN','←':'KC_LEFT','→':'KC_RIGHT',
+  'Home':'KC_HOME','End':'KC_END','PgUp':'KC_PGUP','PgDn':'KC_PGDN',
+  'PrtSc':'KC_PSCR','ScLk':'KC_SCRL','Pause':'KC_PAUS',
+};
+
+function rk(lbl, cls='') {
+  const kc = REF_MAP[lbl] || '';
+  return `<div class="rk ${cls}" onclick="refAssign('${esc(kc)}')" title="${kc||lbl}">${lbl}</div>`;
+}
+
+function refAssign(kc) {
+  if (S.selKey===null) { alert('先にCornix LPのキーをクリックして選択してください'); return; }
+  if (!kc) return;
+  assign(kc);
+}
+
+function buildRef(type) {
+  if (type==='60') return `
+    <div class="ref-row">${rk('`')}${rk('1')}${rk('2')}${rk('3')}${rk('4')}${rk('5')}${rk('6')}${rk('7')}${rk('8')}${rk('9')}${rk('0')}${rk('-')}${rk('=')}${rk('⌫','w2')}</div>
+    <div class="ref-row">${rk('Tab','w1')}${rk('Q')}${rk('W')}${rk('E')}${rk('R')}${rk('T')}${rk('Y')}${rk('U')}${rk('I')}${rk('O')}${rk('P')}${rk('[')}${rk(']')}${rk('\\','w1')}</div>
+    <div class="ref-row">${rk('Caps','w2')}${rk('A')}${rk('S')}${rk('D')}${rk('F')}${rk('G')}${rk('H')}${rk('J')}${rk('K')}${rk('L')}${rk(';')}${rk("'")}${rk('↵','w2')}</div>
+    <div class="ref-row">${rk('⇧L','w3')}${rk('Z')}${rk('X')}${rk('C')}${rk('V')}${rk('B')}${rk('N')}${rk('M')}${rk(',')}${rk('.')}${rk('/')}${rk('⇧R','w3')}</div>
+    <div class="ref-row">${rk('⌃L','w1')}${rk('⌥L','w1')}${rk('⌘L','w1')}${rk('Space','sp')}${rk('⌘R','w1')}${rk('⌥R','w1')}${rk('⌃R','w1')}</div>`;
+  if (type==='hhkb') return `
+    <div class="ref-row">${rk('Esc')}${rk('1')}${rk('2')}${rk('3')}${rk('4')}${rk('5')}${rk('6')}${rk('7')}${rk('8')}${rk('9')}${rk('0')}${rk('-')}${rk('=')}${rk('\\')}${rk('⌫')}</div>
+    <div class="ref-row">${rk('Tab','w1')}${rk('Q')}${rk('W')}${rk('E')}${rk('R')}${rk('T')}${rk('Y')}${rk('U')}${rk('I')}${rk('O')}${rk('P')}${rk('[')}${rk(']')}${rk('⌫','w1')}</div>
+    <div class="ref-row">${rk('⌃L','w2')}${rk('A')}${rk('S')}${rk('D')}${rk('F')}${rk('G')}${rk('H')}${rk('J')}${rk('K')}${rk('L')}${rk(';')}${rk("'")}${rk('↵','w3')}</div>
+    <div class="ref-row">${rk('⇧L','w3')}${rk('Z')}${rk('X')}${rk('C')}${rk('V')}${rk('B')}${rk('N')}${rk('M')}${rk(',')}${rk('.')}${rk('/')}${rk('⇧R','w1')}${rk('Fn')}</div>
+    <div class="ref-row">${rk('⌘L','w1')}${rk('⌥L','w1')}${rk('Space','sp')}${rk('⌥R','w1')}${rk('⌘R','w1')}</div>`;
+  if (type==='tkl') return `
+    <div class="ref-row">${rk('Esc')}&nbsp;&nbsp;${rk('F1')}${rk('F2')}${rk('F3')}${rk('F4')}&nbsp;${rk('F5')}${rk('F6')}${rk('F7')}${rk('F8')}&nbsp;${rk('F9')}${rk('F10')}${rk('F11')}${rk('F12')}&nbsp;${rk('PrtSc')}${rk('ScLk')}${rk('Pause')}</div>
+    <div class="ref-row">${rk('`')}${rk('1')}${rk('2')}${rk('3')}${rk('4')}${rk('5')}${rk('6')}${rk('7')}${rk('8')}${rk('9')}${rk('0')}${rk('-')}${rk('=')}${rk('⌫','w2')}&nbsp;${rk('Ins')}${rk('Home')}${rk('PgUp')}</div>
+    <div class="ref-row">${rk('Tab','w1')}${rk('Q')}${rk('W')}${rk('E')}${rk('R')}${rk('T')}${rk('Y')}${rk('U')}${rk('I')}${rk('O')}${rk('P')}${rk('[')}${rk(']')}${rk('\\','w1')}&nbsp;${rk('Del')}${rk('End')}${rk('PgDn')}</div>
+    <div class="ref-row">${rk('Caps','w2')}${rk('A')}${rk('S')}${rk('D')}${rk('F')}${rk('G')}${rk('H')}${rk('J')}${rk('K')}${rk('L')}${rk(';')}${rk("'")}${rk('↵','w2')}</div>
+    <div class="ref-row">${rk('⇧L','w3')}${rk('Z')}${rk('X')}${rk('C')}${rk('V')}${rk('B')}${rk('N')}${rk('M')}${rk(',')}${rk('.')}${rk('/')}${rk('⇧R','w3')}&nbsp;${rk('↑')}</div>
+    <div class="ref-row">${rk('⌃L','w1')}${rk('⌘L','w1')}${rk('⌥L','w1')}${rk('Space','sp')}${rk('⌥R','w1')}${rk('⌘R','w1')}${rk('⌃R','w1')}&nbsp;${rk('←')}${rk('↓')}${rk('→')}</div>`;
+  return '';
+}
+
+// ─── Keycode name normalization ────────────────────────────────────────────
+// Vialが使う名称と私のアプリ内名称の変換
+const TO_VIAL = {'KC_BSPC':'KC_BSPACE','KC_SCLN':'KC_SCOLON','KC_BSLS':'KC_BSLASH',
+  'KC_ENT':'KC_ENTER','KC_SPC':'KC_SPACE','KC_QUOT':'KC_QUOTE'};
+const FROM_VIAL = Object.fromEntries(Object.entries(TO_VIAL).map(([a,b])=>[b,a]));
+
+function normKC(kc) { // my → Vial
+  if (!kc || kc === -1) return 'KC_NO';
+  // LT/MT内のキーコードも変換
+  const lt = kc.match(/^(LT|MT)\((\d+),(.+)\)$/);
+  if (lt) return `${lt[1]}(${lt[2]},${normKC(lt[3])})`;
+  return TO_VIAL[kc] || kc;
+}
+function denormKC(kc) { // Vial → my
+  if (!kc || kc === -1) return 'KC_TRNS';
+  const lt = kc.match(/^(LT|MT)\((\d+),(.+)\)$/);
+  if (lt) return `${lt[1]}(${lt[2]},${denormKC(lt[3])})`;
+  return FROM_VIAL[kc] || kc;
+}
+
+// ─── Vial layout format conversion ────────────────────────────────────────
+// Vial形式: 8行 × 7列 [左半分rows0-3, 右半分rows4-7(列逆順)]
+// 右半分の列は右端から左端の順で格納される
+// row2の[6]と row5の[6]がそれぞれ左右のエンコーダークリック
+
+const VIAL_UID_STR = '16882930253541522617'; // 64bit整数なのでstring管理
+const NUM_VIAL_LAYERS = 10; // Cornix LPは10レイヤー
+
+function toVialLayout(flat) {
+  const rows = [];
+  // 左半分: rows 0-3 (col 0-5 + encoder slot)
+  for (let r = 0; r < 4; r++) {
+    const row = Array.from({length:6}, (_,c) => normKC(flat[r*12+c]));
+    row.push(r===2 ? 'KC_MUTE' : -1); // 左エンコーダークリック = row2
+    rows.push(row);
+  }
+  // 右半分: rows 4-7 (col逆順: 右端→左端)
+  for (let r = 0; r < 4; r++) {
+    const row = Array.from({length:6}, (_,c) => normKC(flat[r*12+6+(5-c)]));
+    row.push(r===1 ? 'KC_BTN3' : -1); // 右エンコーダークリック = row5(=右のrow1)
+    rows.push(row);
+  }
+  return rows;
+}
+
+function fromVialLayout(vialLayer) {
+  const flat = Array(48).fill('KC_TRNS');
+  for (let r = 0; r < 4; r++) {
+    if (!vialLayer[r]) continue;
+    for (let c = 0; c < 6; c++) {
+      const kc = vialLayer[r][c];
+      if (kc !== -1) flat[r*12+c] = denormKC(kc);
+    }
+  }
+  for (let r = 0; r < 4; r++) {
+    if (!vialLayer[4+r]) continue;
+    for (let c = 0; c < 6; c++) {
+      const kc = vialLayer[4+r][5-c]; // 逆順を戻す
+      if (kc !== -1) flat[r*12+6+c] = denormKC(kc);
+    }
+  }
+  return flat;
+}
+
+// ─── Export / Import ───────────────────────────────────────────────────────
+function doExport() {
+  // Vial形式でエクスポート (10レイヤー)
+  const layout = Array.from({length:NUM_VIAL_LAYERS}, (_,i) =>
+    toVialLayout(i < 8 ? S.layers[i] : Array(48).fill('KC_NO'))
+  );
+  const encoder_layout = Array.from({length:NUM_VIAL_LAYERS}, (_,i) => {
+    const enc = i < 8 ? S.encoders[i] : [['KC_TRNS','KC_TRNS'],['KC_TRNS','KC_TRNS']];
+    return enc.map(e => [normKC(e[0]), normKC(e[1])]);
+  });
+  const empty32 = n => Array(n).fill(null);
+  const data = {
+    version: 1,
+    uid: '__UID__',
+    layout,
+    encoder_layout,
+    layout_options: 0,
+    macro: empty32(32).map(()=>[]),
+    vial_protocol: 6,
+    via_protocol: 9,
+    tap_dance: empty32(32).map(()=>['KC_NO','KC_NO','KC_NO','KC_NO',250]),
+    combo: empty32(32).map(()=>['KC_NO','KC_NO','KC_NO','KC_NO','KC_NO']),
+    key_override: [],
+    alt_repeat_key: [],
+    settings: {"2":50,"6":1000,"7":250,"18":20,"19":20,"22":1,"23":0,"26":1,"27":120},
+  };
+  // UIDを精度劣化なしに埋め込む（64bit整数はJSのNumber精度を超えるためstring置換）
+  const json = JSON.stringify(data).replace('"__UID__"', VIAL_UID_STR);
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cornix_keymap.vil';
+  a.click();
+}
+
+function doImport() {
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.vil,.json';
+  inp.onchange = e => {
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+      try {
+        const d = JSON.parse(ev.target.result);
+        if (d.layout && Array.isArray(d.layout)) {
+          // Vial native format
+          d.layout.slice(0,8).forEach((vl,i) => { S.layers[i] = fromVialLayout(vl); });
+        } else if (d.layers && Array.isArray(d.layers)) {
+          // 旧形式 (このアプリの以前のエクスポート)
+          d.layers.forEach((l,i) => {
+            if (i<8 && Array.isArray(l)) {
+              S.layers[i] = l.slice(0,48);
+              while(S.layers[i].length<48) S.layers[i].push('KC_TRNS');
+            }
+          });
+        } else throw new Error();
+        if (d.encoder_layout) d.encoder_layout.slice(0,8).forEach((layer,i) => {
+          if (Array.isArray(layer))
+            S.encoders[i] = layer.slice(0,2).map(e=>Array.isArray(e)?e.map(denormKC):['KC_TRNS','KC_TRNS']);
+        });
+        render(); alert('インポート完了！');
+      } catch { alert('形式エラー: Vial JSON (.vil) を選択してください'); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+// ─── Keyboard shortcuts ────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key==='Escape') closePicker();
+  if (!document.getElementById('overlay').classList.contains('off')) return;
+  // Layer switch with number keys (when picker closed)
+  const n = parseInt(e.key);
+  if (!isNaN(n) && n>=0 && n<=7 && !e.ctrlKey && !e.metaKey) { setLayer(n); }
+});
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
