@@ -26,6 +26,11 @@ button { background: var(--surface2); color: var(--text); border: 1px solid var(
 button:hover { background: #4b5563; }
 button.primary { background: var(--accent2); border-color: var(--accent2); }
 button.primary:hover { background: var(--accent); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button:disabled:hover { background: var(--surface2); }
+.live-status { text-align: center; color: var(--text-dim); font-size: 11px; margin: -8px 0 14px; min-height: 14px; }
+.key.rawkey { background: #2a1e10; border-color: #92400e; }
+.key.rawkey .ks { color: #fbbf24; font-size: 9px; }
 
 /* Layer tabs */
 .ltabs { display: flex; gap: 4px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -124,9 +129,13 @@ button.primary:hover { background: var(--accent); }
     <div class="btn-group">
       <button onclick="doImport()">インポート (.vil)</button>
       <button class="primary" onclick="doExport()">エクスポート (.vil)</button>
+      <button onclick="connectDevice()">USB接続 (WebHID)</button>
+      <button id="btnRead" onclick="readAllFromDevice()" disabled>キーボードから読込</button>
+      <button id="btnWrite" class="primary" onclick="writeAllToDevice()" disabled>キーボードに書込</button>
     </div>
   </header>
 
+  <div class="live-status" id="liveStatus"></div>
   <div class="ltabs" id="ltabs"></div>
   <div class="hint">キーをクリックして割り当て変更 — 下の参照キーボードからもアサイン可能</div>
   <div class="sel-info" id="selInfo"></div>
@@ -210,6 +219,8 @@ for(let i=1;i<=24;i++) LABELS[`KC_F${i}`]=`F${i}`;
 function getLabel(kc) {
   if (!kc || kc==='KC_NO') return '';
   if (kc==='KC_TRNS') return '▽';
+  const raw = kc.match(/^RAW\(0x([0-9A-Fa-f]+)\)$/);
+  if (raw) return `0x${raw[1].toUpperCase()}`;
   if (LABELS[kc]) return LABELS[kc];
   const mo = kc.match(/^MO\((\d+)\)$/);   if (mo) return `MO\n${mo[1]}`;
   const tg = kc.match(/^TG\((\d+)\)$/);   if (tg) return `TG\n${tg[1]}`;
@@ -228,6 +239,7 @@ function getLabel(kc) {
 function getClass(kc) {
   if (!kc||kc==='KC_NO') return 'empty';
   if (kc==='KC_TRNS') return 'transp';
+  if (/^RAW\(/.test(kc)) return 'rawkey';
   if (/^(MO|TG|TO|LT|OSL|DF)\(/.test(kc)) return 'lkey';
   if (/^(KC_LSFT|KC_RSFT|KC_LCTL|KC_RCTL|KC_LALT|KC_RALT|KC_LGUI|KC_RGUI)$/.test(kc)||/^(MT|OSM)\(/.test(kc)) return 'mkey';
   return '';
@@ -647,6 +659,264 @@ function fromVialLayout(vialLayer) {
     }
   }
   return flat;
+}
+
+// ─── 数値キーコード ⇔ 文字列キーコード 変換 (QMK 16bit keycode 仕様) ─────────
+// 基本キー・モディファイア・レイヤーキー(MO/LT/MT/TG/TO/OSL/DF/OSM)の数値は
+// QMK公式ソース(quantum/keycodes.h)のレンジ仕様に基づく。
+//   QK_MOD_TAP  0x2000-0x3FFF : mod(5bit)<<8 | keycode(8bit)
+//   QK_LAYER_TAP 0x4000-0x4FFF : layer(4bit)<<8 | keycode(8bit)
+//   QK_TO 0x5200 / QK_MOMENTARY 0x5220 / QK_DEF_LAYER 0x5240 /
+//   QK_TOGGLE_LAYER 0x5260 / QK_ONE_SHOT_LAYER 0x5280 / QK_ONE_SHOT_MOD 0x52A0
+//     各 + layer(5bit) または + mod(5bit)
+// 注意: BT_SEL0-4 / OUT_USB / OUT_BT / OUT_AUTO / BT_CLR / BT_NXT / BT_PRV / QK_RBT は
+// 本機ファームウェア固有の拡張キーコードで公開仕様が確認できないため、
+// 正確な数値は不明。読込時は RAW(0x____) として実際の数値を保持し、その
+// まま書き戻せばラウンドトリップは安全。ただしピッカーでこれらを新規に
+// 割り当てて書き込むことはできない(実機の値と一致しない可能性があるため)。
+// 実機で正しい数値が判明したら BASIC_NUM に追記すること。
+const MOD_BITS = { KC_LCTL:0x01, KC_LSFT:0x02, KC_LALT:0x04, KC_LGUI:0x08,
+                    KC_RCTL:0x11, KC_RSFT:0x12, KC_RALT:0x14, KC_RGUI:0x18 };
+const MOD_BITS_REV = Object.fromEntries(Object.entries(MOD_BITS).map(([k,v])=>[v,k]));
+
+const BASIC_NUM = {
+  KC_ENT:0x28, KC_ENTER:0x28, KC_ESC:0x29, KC_BSPC:0x2A, KC_BSPACE:0x2A, KC_TAB:0x2B, KC_SPC:0x2C, KC_SPACE:0x2C,
+  KC_MINS:0x2D, KC_EQL:0x2E, KC_LBRC:0x2F, KC_RBRC:0x30, KC_BSLS:0x31, KC_BSLASH:0x31, KC_SCLN:0x33, KC_SCOLON:0x33, KC_QUOT:0x34, KC_QUOTE:0x34,
+  KC_GRV:0x35, KC_COMM:0x36, KC_DOT:0x37, KC_SLSH:0x38, KC_CAPS:0x39,
+  KC_PSCR:0x46, KC_SCRL:0x47, KC_PAUS:0x48, KC_INS:0x49, KC_HOME:0x4A, KC_PGUP:0x4B, KC_DEL:0x4C,
+  KC_END:0x4D, KC_PGDN:0x4E, KC_RIGHT:0x4F, KC_LEFT:0x50, KC_DOWN:0x51, KC_UP:0x52,
+  KC_NUM:0x53, KC_KP_SLASH:0x54, KC_KP_ASTERISK:0x55, KC_KP_MINUS:0x56, KC_KP_PLUS:0x57, KC_KP_ENTER:0x58,
+  KC_KP_DOT:0x63, KC_KP_EQUAL:0x67,
+  KC_LCTL:0xE0, KC_LSFT:0xE1, KC_LALT:0xE2, KC_LGUI:0xE3, KC_RCTL:0xE4, KC_RSFT:0xE5, KC_RALT:0xE6, KC_RGUI:0xE7,
+  KC_MUTE:0xA8, KC_VOLU:0xA9, KC_VOLD:0xAA, KC_MNXT:0xAB, KC_MPRV:0xAC, KC_MSTP:0xAD, KC_MPLY:0xAE,
+  KC_MS_U:0xCD, KC_MS_D:0xCE, KC_MS_L:0xCF, KC_MS_R:0xD0, KC_BTN1:0xD1, KC_BTN2:0xD2, KC_BTN3:0xD3,
+  KC_WH_U:0xD9, KC_WH_D:0xDA,
+  QK_BOOT:0x7C00, EE_CLR:0x7C03,
+};
+'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach((c,i) => BASIC_NUM['KC_'+c] = 0x04+i);
+'123456789'.split('').forEach((c,i) => BASIC_NUM['KC_'+c] = 0x1E+i);
+BASIC_NUM.KC_0 = 0x27;
+for (let i=1;i<=12;i++) BASIC_NUM[`KC_F${i}`] = 0x39+i;
+for (let i=13;i<=24;i++) BASIC_NUM[`KC_F${i}`] = 0x68+(i-13);
+for (let i=1;i<=9;i++) BASIC_NUM[`KC_KP_${i}`] = 0x58+i;
+BASIC_NUM.KC_KP_0 = 0x62;
+BASIC_NUM.KC_NO = 0x00;
+BASIC_NUM.KC_TRNS = 0x01;
+// Shift付き記号 = QK_MODS(0x0100-0x1FFF)域: (mod<<8)|基本キーコード の合成値
+[['KC_EXLM','KC_1'],['KC_AT','KC_2'],['KC_HASH','KC_3'],['KC_DLR','KC_4'],['KC_PERC','KC_5'],
+ ['KC_CIRC','KC_6'],['KC_AMPR','KC_7'],['KC_ASTR','KC_8'],['KC_LPRN','KC_9'],['KC_RPRN','KC_0'],
+ ['KC_UNDS','KC_MINS'],['KC_PLUS','KC_EQL'],['KC_LCBR','KC_LBRC'],['KC_RCBR','KC_RBRC'],
+ ['KC_PIPE','KC_BSLS'],['KC_COLN','KC_SCLN'],['KC_DQUO','KC_QUOT'],['KC_LT','KC_COMM'],
+ ['KC_GT','KC_DOT'],['KC_QUES','KC_SLSH'],['KC_TILD','KC_GRV'],
+].forEach(([shifted, base]) => { BASIC_NUM[shifted] = (MOD_BITS.KC_LSFT << 8) | BASIC_NUM[base]; });
+
+const NUM_BASIC_REV = Object.fromEntries(Object.entries(BASIC_NUM).map(([k,v])=>[v,k]));
+// 別名より基本名(このアプリ内での表記)を優先して逆引きさせる
+Object.assign(NUM_BASIC_REV, { 0x28:'KC_ENT', 0x2C:'KC_SPC' });
+
+function kcToNum(kc) { // 文字列/-1 → 数値 (不明な場合はnull)
+  if (kc === -1 || kc === 'KC_NO' || !kc) return 0;
+  if (kc === 'KC_TRNS') return 1;
+  if (typeof kc !== 'string') return null;
+  let m;
+  if ((m = kc.match(/^RAW\(0x([0-9a-fA-F]+)\)$/))) return parseInt(m[1], 16);
+  if ((m = kc.match(/^MT\((KC_[A-Z0-9]+),(.+)\)$/))) {
+    const mod = MOD_BITS[m[1]]; if (mod === undefined) return null;
+    const inner = kcToNum(m[2]); if (inner === null) return null;
+    return 0x2000 | ((mod & 0x1F) << 8) | (inner & 0xFF);
+  }
+  if ((m = kc.match(/^LT\((\d+),(.+)\)$/))) {
+    const inner = kcToNum(m[2]); if (inner === null) return null;
+    return 0x4000 | ((+m[1] & 0xF) << 8) | (inner & 0xFF);
+  }
+  if ((m = kc.match(/^MO\((\d+)\)$/)))  return 0x5220 | (+m[1] & 0x1F);
+  if ((m = kc.match(/^TG\((\d+)\)$/)))  return 0x5260 | (+m[1] & 0x1F);
+  if ((m = kc.match(/^TO\((\d+)\)$/)))  return 0x5200 | (+m[1] & 0x1F);
+  if ((m = kc.match(/^OSL\((\d+)\)$/))) return 0x5280 | (+m[1] & 0x1F);
+  if ((m = kc.match(/^DF\((\d+)\)$/)))  return 0x5240 | (+m[1] & 0x1F);
+  if ((m = kc.match(/^OSM\((KC_[A-Z0-9]+)\)$/))) {
+    const mod = MOD_BITS[m[1]]; if (mod === undefined) return null;
+    return 0x52A0 | (mod & 0x1F);
+  }
+  if (BASIC_NUM[kc] !== undefined) return BASIC_NUM[kc];
+  return null;
+}
+
+function numToKc(v) { // 数値 → 文字列 (未知の場合は RAW(0x..))
+  if (v === 0) return 'KC_NO';
+  if (v === 1) return 'KC_TRNS';
+  if (v >= 0x2000 && v <= 0x3FFF) {
+    const mod = (v >> 8) & 0x1F, inner = v & 0xFF;
+    return `MT(${MOD_BITS_REV[mod] || ('0x'+mod.toString(16))},${numToKc(inner)})`;
+  }
+  if (v >= 0x4000 && v <= 0x4FFF) {
+    const layer = (v >> 8) & 0xF, inner = v & 0xFF;
+    return `LT(${layer},${numToKc(inner)})`;
+  }
+  if (v >= 0x5200 && v <= 0x521F) return `TO(${v & 0x1F})`;
+  if (v >= 0x5220 && v <= 0x523F) return `MO(${v & 0x1F})`;
+  if (v >= 0x5240 && v <= 0x525F) return `DF(${v & 0x1F})`;
+  if (v >= 0x5260 && v <= 0x527F) return `TG(${v & 0x1F})`;
+  if (v >= 0x5280 && v <= 0x529F) return `OSL(${v & 0x1F})`;
+  if (v >= 0x52A0 && v <= 0x52BF) return `OSM(${MOD_BITS_REV[v & 0x1F] || ('0x'+(v&0x1F).toString(16))})`;
+  if (NUM_BASIC_REV[v] !== undefined) return NUM_BASIC_REV[v];
+  return `RAW(0x${v.toString(16).toUpperCase()})`;
+}
+
+// ─── WebHID ライブ接続 (Vial/VIA プロトコル, USBケーブル経由) ───────────────
+// Bluetoothは仕様上HIDサービスへのブラウザアクセスがブロックされているため、
+// 設定変更時のみ本家Vialアプリと同様にUSBケーブル接続で通信する。
+// 行列形状(8行×7列, 10レイヤー)は本ツールの.vilエクスポート形式と同じ前提
+// (toVialLayout/fromVialLayoutと共通)。実機の定義と異なる場合は要調整。
+const HID_FILTERS = [{ usagePage: 0xFF60, usage: 0x61 }];
+const VIAL_ROWS = 8, VIAL_COLS = 7, VIAL_LAYERS = 10;
+let hidDevice = null;
+let hidResolve = null;
+
+function hidOnReport(e) {
+  if (hidResolve) {
+    const r = hidResolve; hidResolve = null;
+    r(new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength));
+  }
+}
+
+function hidOnDisconnect(e) {
+  if (e.device === hidDevice) {
+    hidDevice = null;
+    setLiveUI(false);
+    setConnStatus('切断されました');
+  }
+}
+
+async function hidSend(bytes) {
+  if (!hidDevice) throw new Error('未接続です');
+  const buf = new Uint8Array(32);
+  buf.set(bytes.slice(0, 32));
+  const p = new Promise(res => { hidResolve = res; });
+  await hidDevice.sendReport(0x00, buf);
+  return p;
+}
+
+function setConnStatus(msg) {
+  const el = document.getElementById('liveStatus');
+  if (el) el.textContent = msg;
+}
+
+function setLiveUI(connected) {
+  document.getElementById('btnRead').disabled = !connected;
+  document.getElementById('btnWrite').disabled = !connected;
+}
+
+async function cmdGetLayerCount() {
+  const r = await hidSend([0x11]);
+  return r[1];
+}
+async function cmdGetBufferChunk(offset, size) {
+  const r = await hidSend([0x12, (offset >> 8) & 0xFF, offset & 0xFF, size]);
+  return r.slice(4, 4 + size);
+}
+async function cmdSetBufferChunk(offset, data) {
+  await hidSend([0x13, (offset >> 8) & 0xFF, offset & 0xFF, data.length, ...data]);
+}
+async function cmdGetEncoder(layer, idx, dir) {
+  const r = await hidSend([0x14, layer, idx, dir]);
+  return (r[4] << 8) | r[5];
+}
+async function cmdSetEncoder(layer, idx, dir, kcNum) {
+  await hidSend([0x15, layer, idx, dir, (kcNum >> 8) & 0xFF, kcNum & 0xFF]);
+}
+async function cmdVialUnlockStart() { return hidSend([0xFE, 0x06]); }
+async function cmdVialUnlockPoll()  { return hidSend([0xFE, 0x07]); }
+
+async function connectDevice() {
+  if (!navigator.hid) { alert('このブラウザはWebHIDに対応していません(Chrome/Edgeでお試しください)'); return; }
+  try {
+    const devices = await navigator.hid.requestDevice({ filters: HID_FILTERS });
+    if (!devices.length) return;
+    hidDevice = devices[0];
+    if (!hidDevice.opened) await hidDevice.open();
+    hidDevice.addEventListener('inputreport', hidOnReport);
+    navigator.hid.addEventListener('disconnect', hidOnDisconnect);
+    const layerCount = await cmdGetLayerCount();
+    setConnStatus(`接続済み: ${hidDevice.productName || 'デバイス'} (レイヤー数:${layerCount})`
+      + (layerCount !== VIAL_LAYERS ? ` ※本ツールの前提(${VIAL_LAYERS})と異なります` : ''));
+    setLiveUI(true);
+  } catch (err) {
+    setConnStatus('接続失敗: ' + err.message);
+  }
+}
+
+async function readAllFromDevice() {
+  try {
+    setConnStatus('読込中...');
+    const total = VIAL_LAYERS * VIAL_ROWS * VIAL_COLS * 2;
+    const buf = new Uint8Array(total);
+    for (let off = 0; off < total; off += 28) {
+      const size = Math.min(28, total - off);
+      buf.set(await cmdGetBufferChunk(off, size), off);
+    }
+    const dv = new DataView(buf.buffer);
+    let p = 0;
+    for (let li = 0; li < VIAL_LAYERS; li++) {
+      const vialLayer = [];
+      for (let r = 0; r < VIAL_ROWS; r++) {
+        const row = [];
+        for (let c = 0; c < VIAL_COLS; c++) { row.push(numToKc(dv.getUint16(p, false))); p += 2; }
+        vialLayer.push(row);
+      }
+      if (li < 8) S.layers[li] = fromVialLayout(vialLayer);
+    }
+    for (let li = 0; li < 8; li++) {
+      for (let ei = 0; ei < 2; ei++) for (let di = 0; di < 2; di++) {
+        S.encoders[li][ei][di] = numToKc(await cmdGetEncoder(li, ei, di));
+      }
+    }
+    render();
+    setConnStatus('読込完了');
+  } catch (err) { setConnStatus('読込失敗: ' + err.message); }
+}
+
+async function writeAllToDevice() {
+  try {
+    setConnStatus('アンロック待機中... キーボード側で指定のキーを押してください');
+    await cmdVialUnlockStart();
+    let unlocked = false;
+    for (let i = 0; i < 60 && !unlocked; i++) {
+      const r = await cmdVialUnlockPoll();
+      unlocked = r[1] === 1;
+      if (!unlocked) await new Promise(res => setTimeout(res, 500));
+    }
+    if (!unlocked) { setConnStatus('アンロック失敗(タイムアウト)。もう一度お試しください'); return; }
+
+    setConnStatus('書込中...');
+    const total = VIAL_LAYERS * VIAL_ROWS * VIAL_COLS * 2;
+    const buf = new Uint8Array(total);
+    const dv = new DataView(buf.buffer);
+    let p = 0, hadUnknown = false;
+    for (let li = 0; li < VIAL_LAYERS; li++) {
+      const vl = toVialLayout(li < 8 ? S.layers[li] : Array(48).fill('KC_NO'));
+      for (let r = 0; r < VIAL_ROWS; r++) {
+        for (let c = 0; c < VIAL_COLS; c++) {
+          let num = kcToNum(vl[r][c]);
+          if (num === null) { num = 0; hadUnknown = true; }
+          dv.setUint16(p, num, false); p += 2;
+        }
+      }
+    }
+    for (let off = 0; off < total; off += 28) {
+      await cmdSetBufferChunk(off, buf.slice(off, off + Math.min(28, total - off)));
+    }
+    for (let li = 0; li < 8; li++) {
+      for (let ei = 0; ei < 2; ei++) for (let di = 0; di < 2; di++) {
+        let num = kcToNum(S.encoders[li][ei][di]);
+        if (num === null) { num = 1; hadUnknown = true; }
+        await cmdSetEncoder(li, ei, di, num);
+      }
+    }
+    setConnStatus(hadUnknown
+      ? '書込完了 (一部の独自キーコードは不明のためKC_NO/KC_TRNSとして書き込みました)'
+      : '書込完了');
+  } catch (err) { setConnStatus('書込失敗: ' + err.message); }
 }
 
 // ─── Export / Import ───────────────────────────────────────────────────────
