@@ -749,6 +749,7 @@ function kcToNum(kc) { // 文字列/-1 → 数値 (不明な場合はnull)
     const mod = MOD_BITS[m[1]]; if (mod === undefined) return null;
     return 0x52A0 | (mod & 0x1F);
   }
+  if ((m = kc.match(/^TD\((\d+)\)$/))) return 0x5700 | (+m[1] & 0xFF);
   if (BASIC_NUM[kc] !== undefined) return BASIC_NUM[kc];
   return null;
 }
@@ -770,6 +771,7 @@ function numToKc(v) { // 数値 → 文字列 (未知の場合は RAW(0x..))
   if (v >= 0x5260 && v <= 0x527F) return `TG(${v & 0x1F})`;
   if (v >= 0x5280 && v <= 0x529F) return `OSL(${v & 0x1F})`;
   if (v >= 0x52A0 && v <= 0x52BF) return `OSM(${MOD_BITS_REV[v & 0x1F] || ('0x'+(v&0x1F).toString(16))})`;
+  if (v >= 0x5700 && v <= 0x57FF) return `TD(${v & 0xFF})`;
   if (NUM_BASIC_REV[v] !== undefined) return NUM_BASIC_REV[v];
   return `RAW(0x${v.toString(16).toUpperCase()})`;
 }
