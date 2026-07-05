@@ -336,6 +336,9 @@ const S = {
     ? [['KC_VOLD','KC_VOLU'],['KC_WH_U','KC_WH_D']]
     : [['KC_TRNS','KC_TRNS'],['KC_TRNS','KC_TRNS']]
   ),
+  // encClick[layer] = [左エンコーダークリック, 右エンコーダークリック]
+  // 実機からの読込前はデフォルト値(KC_MUTE/KC_BTN3)。読込むと実機の値に置き換わる。
+  encClick: Array.from({length:8},()=>['KC_MUTE','KC_BTN3']),
   names: ['Base','Win','Sym','Fn','Adj','Nav','Num','Extra'],
   layer: 0,
   selKey: null,
@@ -625,21 +628,29 @@ function denormKC(kc) { // Vial → my
 const VIAL_UID_STR = '16882930253541522617'; // 64bit整数なのでstring管理
 const NUM_VIAL_LAYERS = 10; // Cornix LPは10レイヤー
 
-function toVialLayout(flat) {
+function toVialLayout(flat, encClick) {
+  const [leftClick, rightClick] = encClick || ['KC_MUTE', 'KC_BTN3'];
   const rows = [];
   // 左半分: rows 0-3 (col 0-5 + encoder slot)
   for (let r = 0; r < 4; r++) {
     const row = Array.from({length:6}, (_,c) => normKC(flat[r*12+c]));
-    row.push(r===2 ? 'KC_MUTE' : -1); // 左エンコーダークリック = row2
+    row.push(r===2 ? normKC(leftClick) : -1); // 左エンコーダークリック = row2
     rows.push(row);
   }
   // 右半分: rows 4-7 (col逆順: 右端→左端)
   for (let r = 0; r < 4; r++) {
     const row = Array.from({length:6}, (_,c) => normKC(flat[r*12+6+(5-c)]));
-    row.push(r===1 ? 'KC_BTN3' : -1); // 右エンコーダークリック = row5(=右のrow1)
+    row.push(r===1 ? normKC(rightClick) : -1); // 右エンコーダークリック = row5(=右のrow1)
     rows.push(row);
   }
   return rows;
+}
+
+function encClickFromVialLayout(vialLayer) {
+  // row2[6]=左エンコーダークリック, row5[6](=右半分のrow1)=右エンコーダークリック
+  const left = vialLayer[2] && vialLayer[2][6] !== -1 ? denormKC(vialLayer[2][6]) : 'KC_MUTE';
+  const right = vialLayer[5] && vialLayer[5][6] !== -1 ? denormKC(vialLayer[5][6]) : 'KC_BTN3';
+  return [left, right];
 }
 
 function fromVialLayout(vialLayer) {
@@ -864,7 +875,10 @@ async function readAllFromDevice() {
         for (let c = 0; c < VIAL_COLS; c++) { row.push(numToKc(dv.getUint16(p, false))); p += 2; }
         vialLayer.push(row);
       }
-      if (li < 8) S.layers[li] = fromVialLayout(vialLayer);
+      if (li < 8) {
+        S.layers[li] = fromVialLayout(vialLayer);
+        S.encClick[li] = encClickFromVialLayout(vialLayer);
+      }
     }
     for (let li = 0; li < 8; li++) {
       for (let ei = 0; ei < 2; ei++) for (let di = 0; di < 2; di++) {
@@ -894,7 +908,7 @@ async function writeAllToDevice() {
     const dv = new DataView(buf.buffer);
     let p = 0, hadUnknown = false;
     for (let li = 0; li < VIAL_LAYERS; li++) {
-      const vl = toVialLayout(li < 8 ? S.layers[li] : Array(48).fill('KC_NO'));
+      const vl = toVialLayout(li < 8 ? S.layers[li] : Array(48).fill('KC_NO'), li < 8 ? S.encClick[li] : null);
       for (let r = 0; r < VIAL_ROWS; r++) {
         for (let c = 0; c < VIAL_COLS; c++) {
           let num = kcToNum(vl[r][c]);
@@ -923,7 +937,7 @@ async function writeAllToDevice() {
 function doExport() {
   // Vial形式でエクスポート (10レイヤー)
   const layout = Array.from({length:NUM_VIAL_LAYERS}, (_,i) =>
-    toVialLayout(i < 8 ? S.layers[i] : Array(48).fill('KC_NO'))
+    toVialLayout(i < 8 ? S.layers[i] : Array(48).fill('KC_NO'), i < 8 ? S.encClick[i] : null)
   );
   const encoder_layout = Array.from({length:NUM_VIAL_LAYERS}, (_,i) => {
     const enc = i < 8 ? S.encoders[i] : [['KC_TRNS','KC_TRNS'],['KC_TRNS','KC_TRNS']];
@@ -965,7 +979,10 @@ function doImport() {
         const d = JSON.parse(ev.target.result);
         if (d.layout && Array.isArray(d.layout)) {
           // Vial native format
-          d.layout.slice(0,8).forEach((vl,i) => { S.layers[i] = fromVialLayout(vl); });
+          d.layout.slice(0,8).forEach((vl,i) => {
+            S.layers[i] = fromVialLayout(vl);
+            S.encClick[i] = encClickFromVialLayout(vl);
+          });
         } else if (d.layers && Array.isArray(d.layers)) {
           // 旧形式 (このアプリの以前のエクスポート)
           d.layers.forEach((l,i) => {
