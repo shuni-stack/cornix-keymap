@@ -831,12 +831,16 @@ async function cmdGetBufferChunk(offset, size) {
 async function cmdSetBufferChunk(offset, data) {
   await hidSend([0x13, (offset >> 8) & 0xFF, offset & 0xFF, data.length, ...data]);
 }
-async function cmdGetEncoder(layer, idx, dir) {
-  const r = await hidSend([0x14, layer, idx, dir]);
-  return (r[4] << 8) | r[5];
+// エンコーダーはVIA標準コマンド(0x14/0x15)ではなくVial独自拡張(0xFE prefix)を使う。
+// vial-gui本家実装(protocol/keyboard_comm.py)で確認済み:
+//   GET: [0xFE,0x03,layer,idx] -> 応答 [0:2]=反時計回り(CCW), [2:4]=時計回り(CW)
+//   SET: [0xFE,0x04,layer,idx,direction(0=CCW,1=CW),kc_hi,kc_lo]
+async function cmdGetEncoder(layer, idx) {
+  const r = await hidSend([0xFE, 0x03, layer, idx]);
+  return [(r[0] << 8) | r[1], (r[2] << 8) | r[3]]; // [CCW, CW]
 }
 async function cmdSetEncoder(layer, idx, dir, kcNum) {
-  await hidSend([0x15, layer, idx, dir, (kcNum >> 8) & 0xFF, kcNum & 0xFF]);
+  await hidSend([0xFE, 0x04, layer, idx, dir, (kcNum >> 8) & 0xFF, kcNum & 0xFF]);
 }
 async function cmdVialUnlockStart() { return hidSend([0xFE, 0x06]); }
 async function cmdVialUnlockPoll()  { return hidSend([0xFE, 0x07]); }
@@ -883,8 +887,10 @@ async function readAllFromDevice() {
       }
     }
     for (let li = 0; li < 8; li++) {
-      for (let ei = 0; ei < 2; ei++) for (let di = 0; di < 2; di++) {
-        S.encoders[li][ei][di] = numToKc(await cmdGetEncoder(li, ei, di));
+      for (let ei = 0; ei < 2; ei++) {
+        const [ccw, cw] = await cmdGetEncoder(li, ei);
+        S.encoders[li][ei][0] = numToKc(ccw);
+        S.encoders[li][ei][1] = numToKc(cw);
       }
     }
     render();
